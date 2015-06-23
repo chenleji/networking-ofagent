@@ -41,16 +41,16 @@ class DhcpLib(object):
     def __init__(self, ryuapp):
         """Constructor.
         Define the internal table mapped an ip and a mac in a network.
-        self._mac_ip_tbl:
-            {network1: {mac: ip_addr, ...},
-             network2: {mac: ip_addr, ...},
+        self._ip_pool_tbl:
+            {network1: {mac: {ip_addr:ip_addr, snet_mask:snet_mask, gateway:gateway, dns:dns, static_route:static_route}, ...},
+             network2: {mac: {ip_addr:ip_addr, snet_mask:snet_mask, gateway:gateway, dns:dns, static_route:static_route}, ...},
              ...,
             }
 
         :param ryuapp: object of the ryu app.
         """
         self.ryuapp = ryuapp
-        self._mac_ip_tbl = {}
+        self._ip_pool_tbl = {}
         self.br = None
 
     @log_helpers.log_method_call
@@ -68,22 +68,27 @@ class DhcpLib(object):
         ryu_api.send_msg(self.ryuapp, out)
 
     @log_helpers.log_method_call
-    def add_mac_ip_table_entry(self, network, ip, mac):
-        if network in self._mac_ip_tbl:
-            self._mac_ip_tbl[network][mac] = ip
+    def add_ip_pool_table_entry(self, network, mac, ip_addr, snet_mask, gateway, dns):
+        entry = {'ip_addr': ip_addr,
+                 'snet_mask': snet_mask,
+                 'gateway': gateway,
+                 'dns': dns
+                 }
+        if network in self._ip_pool_tbl:
+            self._ip_pool_tbl[network][mac] = entry
         else:
-            self._mac_ip_tbl[network] = {mac: ip}
+            self._ip_pool_tbl[network] = {mac: entry}
 
     @log_helpers.log_method_call
-    def del_mac_ip_table_entry(self, network, ip):
-        if network not in self._mac_ip_tbl:
+    def del_ip_pool_table_entry(self, network, mac):
+        if network not in self._ip_pool_tbl:
             LOG.debug("removal of unknown network %s", network)
             return
-        if self._mac_ip_tbl[network].pop(ip, None) is None:
-            LOG.debug("removal of unknown ip %s", ip)
+        if self._ip_pool_tbl[network].pop(mac, None) is None:
+            LOG.debug("removal of unknown mac %s", mac)
             return
-        if not self._mac_ip_tbl[network]:
-            del self._mac_ip_tbl[network]
+        if not self._ip_pool_tbl[network]:
+            del self._ip_pool_tbl[network]
 
     def packet_in_handler(self, ev):
         """Check a packet-in message.
@@ -137,7 +142,7 @@ class DhcpLib(object):
             LOG.debug("drop non-dhcp packet")
             return
 
-        iptbl = self._mac_ip_tbl.get(network)
+        iptbl = self._ip_pool_tbl.get(network)
         if iptbl:
             if self._respond_dhcp(datapath, port, iptbl,
                                  pkt_ethernet, pkt_vlan, pkt_udp, pkt_dhcp):
@@ -166,12 +171,44 @@ class DhcpLib(object):
 
     def _respond_dhcp(self, datapath, port, iptbl,
                      pkt_ethernet, pkt_vlan, pkt_udp, pkt_dhcp):
-        options = None
         hw_addr = pkt_dhcp.chaddr
-        ip_addr = iptbl.get(hw_addr)
-        if hw_addr is None:
-            LOG.debug("unknown arp request %s", ip_addr)
+        entry = iptbl.get(hw_addr)
+        if entry is None:
+            LOG.debug("unknown ip request for mac: %s", hw_addr)
             return False
+
+        ip_addr = entry['ip_addr']
+        snet_mask = entry['snet_mask']
+        siaddr = entry['gate_way']    # gateway ip addr
+        dns = entry['dns']
+        lease_time = 180
+
+        # DHCP message type code
+        DHCP_DISCOVER = 1
+        DHCP_OFFER = 2
+        DHCP_REQUEST = 3
+        DHCP_ACK = 5
+
+        msg_type = dhcp.DHCP_ACK
+        if pkt_dhcp.msg_type == dhcp.DHCP_REQUEST:
+            msg_type = dhcp.DHCP_OFFER
+
+        # DHCP options tag code
+        option_list = list()
+        option_list.append(dhcp.option(dhcp.DHCP_MESSAGE_TYPE_OPT, msg_type, length=1))
+        option_list.append(dhcp.option(dhcp.DHCP_SUBNET_MASK_OPT, snet_mask, length=4))
+        option_list.append(dhcp.option(dhcp.DHCP_GATEWAY_ADDR_OPT, siaddr, length=4))
+        option_list.append(dhcp.option(dhcp.DHCP_DNS_SERVER_ADDR_OPT, dns, length=4))
+        option_list.append(dhcp.option(dhcp.DHCP_IP_ADDR_LEASE_TIME_OPT, lease_time, length=4))
+        option_list.append(dhcp.option(dhcp.DHCP_GATEWAY_ADDR_OPT, siaddr, length=4))
+
+        DHCP_SERVER_IDENTIFIER_OPT = 54
+        DHCP_PARAMETER_REQUEST_LIST_OPT = 55
+        DHCP_RENEWAL_TIME_OPT = 58
+        DHCP_REBINDING_TIME_OPT = 59
+
+        options = dhcp.options(option_list=option_list, options_len=len(option_list))
+
         LOG.debug("responding dhcp request %(hw_addr)s -> %(ip_addr)s",
                   {'hw_addr': hw_addr, 'ip_addr': ip_addr})
         pkt = packet.Packet()
@@ -184,8 +221,8 @@ class DhcpLib(object):
                                        pcp=pkt_vlan.pcp,
                                        vid=pkt_vlan.vid))
         pkt.add_protocol(udp.udp(src_port=pkt_udp.dst_port, dst_port=pkt_udp.src_port))
-        pkt.add_protocol(dhcp.dhcp(op=self._MSG_TYPE_BOOT_REPLY, pkt_dhcp.chaddr, options,
-                                    ciaddr=pkt_dhcp.ciaddr, yiaddr=iptbl[hw_addr], siaddr='0.0.0.0',
+        pkt.add_protocol(dhcp.dhcp(op=self._MSG_TYPE_BOOT_REPLY, chaddr=pkt_dhcp.chaddr, options=options,
+                                    ciaddr=pkt_dhcp.ciaddr, yiaddr=ip_addr, siaddr=siaddr,
                                     giaddr='0.0.0.0', sname='', boot_file=''))
         self._send_dhcp_reply(datapath, port, pkt)
         return True
