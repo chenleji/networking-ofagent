@@ -68,11 +68,12 @@ class DhcpLib(object):
         ryu_api.send_msg(self.ryuapp, out)
 
     @log_helpers.log_method_call
-    def add_ip_pool_table_entry(self, network, mac, ip_addr, snet_mask, gateway, dns):
+    def add_ip_pool_table_entry(self, network, mac, ip_addr, snet_mask, gateway, dns, dhcp_server):
         entry = {'ip_addr': ip_addr,
                  'snet_mask': snet_mask,
                  'gateway': gateway,
-                 'dns': dns
+                 'dns': dns,
+                 'dhcp_server': dhcp_server
                  }
         if network in self._ip_pool_tbl:
             self._ip_pool_tbl[network][mac] = entry
@@ -181,17 +182,18 @@ class DhcpLib(object):
         snet_mask = entry['snet_mask']
         siaddr = entry['gate_way']    # gateway ip addr
         dns = entry['dns']
+        dhcp_server = entry['dhcp_server']
         lease_time = 180
 
         # DHCP message type code
-        DHCP_DISCOVER = 1
-        DHCP_OFFER = 2
-        DHCP_REQUEST = 3
-        DHCP_ACK = 5
-
         msg_type = dhcp.DHCP_ACK
-        if pkt_dhcp.msg_type == dhcp.DHCP_REQUEST:
+        if pkt_dhcp.msg_type == dhcp.DHCP_DISCOVER:
             msg_type = dhcp.DHCP_OFFER
+        if pkt_dhcp.msg_type == dhcp.DHCP_REQUEST:
+            if pkt_dhcp.ciaddr == ip_addr:
+                msg_type = dhcp.DHCP_NAK
+            else:
+                msg_type = dhcp.DHCP_OFFER
 
         # DHCP options tag code
         option_list = list()
@@ -199,14 +201,10 @@ class DhcpLib(object):
         option_list.append(dhcp.option(dhcp.DHCP_SUBNET_MASK_OPT, snet_mask, length=4))
         option_list.append(dhcp.option(dhcp.DHCP_GATEWAY_ADDR_OPT, siaddr, length=4))
         option_list.append(dhcp.option(dhcp.DHCP_DNS_SERVER_ADDR_OPT, dns, length=4))
+        option_list.append(dhcp.option(dhcp.DHCP_SERVER_IDENTIFIER_OPT, dhcp_server, length=4))
         option_list.append(dhcp.option(dhcp.DHCP_IP_ADDR_LEASE_TIME_OPT, lease_time, length=4))
-        option_list.append(dhcp.option(dhcp.DHCP_GATEWAY_ADDR_OPT, siaddr, length=4))
-
-        DHCP_SERVER_IDENTIFIER_OPT = 54
-        DHCP_PARAMETER_REQUEST_LIST_OPT = 55
-        DHCP_RENEWAL_TIME_OPT = 58
-        DHCP_REBINDING_TIME_OPT = 59
-
+        option_list.append(dhcp.option(dhcp.DHCP_RENEWAL_TIME_OPT, lease_time/2, length=4))
+        option_list.append(dhcp.option(dhcp.DHCP_REBINDING_TIME_OPT, lease_time*7/8, length=4))
         options = dhcp.options(option_list=option_list, options_len=len(option_list))
 
         LOG.debug("responding dhcp request %(hw_addr)s -> %(ip_addr)s",
