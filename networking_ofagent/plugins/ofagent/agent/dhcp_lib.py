@@ -184,27 +184,42 @@ class DhcpLib(object):
         dns = entry['dns']
         dhcp_server = entry['dhcp_server']
         lease_time = 180
+        msg_type_opt = dhcp.DHCP_DISCOVER
+        msg_type = dhcp.DHCP_ACK
+        req_ip_addr = None
+        sel_server_id = None
 
         # DHCP message type code
-        msg_type = dhcp.DHCP_ACK
-        if pkt_dhcp.msg_type == dhcp.DHCP_DISCOVER:
+        for option in entry['options']:
+            if option.tag == dhcp.DHCP_MESSAGE_TYPE_OPT:
+                msg_type_opt = option.value
+            if option.tag == dhcp.DHCP_REQUESTED_IP_ADDR_OPT:
+                req_ip_addr = option.value
+            if option.tag == dhcp.DHCP_SERVER_IDENTIFIER_OPT:
+                sel_server_id = option.value
+
+        if sel_server_id != dhcp_server:
+            LOG.debug("unknown dhcp server (%s) was selected!", sel_server_id)
+            return False
+        if msg_type_opt == dhcp.DHCP_DISCOVER:
             msg_type = dhcp.DHCP_OFFER
-        if pkt_dhcp.msg_type == dhcp.DHCP_REQUEST:
-            if pkt_dhcp.ciaddr == ip_addr:
-                msg_type = dhcp.DHCP_NAK
+        if msg_type_opt == dhcp.DHCP_REQUEST:
+            if req_ip_addr == ip_addr:
+                msg_type = dhcp.DHCP_ACK
             else:
-                msg_type = dhcp.DHCP_OFFER
+                msg_type = dhcp.DHCP_NAK
 
         # DHCP options tag code
         option_list = list()
         option_list.append(dhcp.option(dhcp.DHCP_MESSAGE_TYPE_OPT, msg_type, length=1))
-        option_list.append(dhcp.option(dhcp.DHCP_SUBNET_MASK_OPT, snet_mask, length=4))
-        option_list.append(dhcp.option(dhcp.DHCP_GATEWAY_ADDR_OPT, siaddr, length=4))
-        option_list.append(dhcp.option(dhcp.DHCP_DNS_SERVER_ADDR_OPT, dns, length=4))
-        option_list.append(dhcp.option(dhcp.DHCP_SERVER_IDENTIFIER_OPT, dhcp_server, length=4))
-        option_list.append(dhcp.option(dhcp.DHCP_IP_ADDR_LEASE_TIME_OPT, lease_time, length=4))
-        option_list.append(dhcp.option(dhcp.DHCP_RENEWAL_TIME_OPT, lease_time/2, length=4))
-        option_list.append(dhcp.option(dhcp.DHCP_REBINDING_TIME_OPT, lease_time*7/8, length=4))
+        if msg_type_opt != dhcp.dhcp.DHCP_NAK:
+            option_list.append(dhcp.option(dhcp.DHCP_SUBNET_MASK_OPT, snet_mask, length=4))
+            option_list.append(dhcp.option(dhcp.DHCP_GATEWAY_ADDR_OPT, siaddr, length=4))
+            option_list.append(dhcp.option(dhcp.DHCP_DNS_SERVER_ADDR_OPT, dns, length=4))
+            option_list.append(dhcp.option(dhcp.DHCP_SERVER_IDENTIFIER_OPT, dhcp_server, length=4))
+            option_list.append(dhcp.option(dhcp.DHCP_IP_ADDR_LEASE_TIME_OPT, lease_time, length=4))
+            option_list.append(dhcp.option(dhcp.DHCP_RENEWAL_TIME_OPT, lease_time/2, length=4))
+            option_list.append(dhcp.option(dhcp.DHCP_REBINDING_TIME_OPT, lease_time*7/8, length=4))
         options = dhcp.options(option_list=option_list, options_len=len(option_list))
 
         LOG.debug("responding dhcp request %(hw_addr)s -> %(ip_addr)s",
