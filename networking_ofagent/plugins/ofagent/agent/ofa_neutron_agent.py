@@ -49,6 +49,7 @@ from neutron.plugins.openvswitch.common import constants
 
 from networking_ofagent.i18n import _LE, _LI, _LW
 from networking_ofagent.plugins.ofagent.agent import arp_lib
+from networking_ofagent.plugins.ofagent.agent import dhcp_lib
 from networking_ofagent.plugins.ofagent.agent import constants as ofa_const
 from networking_ofagent.plugins.ofagent.agent import flows
 from networking_ofagent.plugins.ofagent.agent import monitor
@@ -135,6 +136,7 @@ class OFANeutronAgentRyuApp(app_manager.RyuApp):
     def __init__(self, *args, **kwargs):
         super(OFANeutronAgentRyuApp, self).__init__(*args, **kwargs)
         self.arplib = arp_lib.ArpLib(self)
+        self.dhcplib = dhcp_lib.DhcpLib(self)
         self.monitor = monitor.PortMonitor()
 
     def start(self):
@@ -161,6 +163,7 @@ class OFANeutronAgentRyuApp(app_manager.RyuApp):
     @handler.set_ev_cls(ofp_event.EventOFPPacketIn, handler.MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
         self.arplib.packet_in_handler(ev)
+        self.dhcplib.packet_in_handler(ev)
 
     def add_arp_table_entry(self, network, ip, mac):
         self.arplib.add_arp_table_entry(network, ip, mac)
