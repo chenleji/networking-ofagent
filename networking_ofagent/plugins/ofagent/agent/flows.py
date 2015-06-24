@@ -211,7 +211,7 @@ class OFAgentIntegrationBridge(ofswitch.OpenFlowSwitch):
     def install_dhcp_proxy(self, table_id):
         (dp, ofp, ofpp) = self._get_dp()
         match = ofpp.OFPMatch(eth_type=ether.ETH_TYPE_IP,
-                              ip_prot=inet.IPPROTO_UDP,
+                              ip_proto=inet.IPPROTO_UDP,
                               udp_src=68,
                               udp_dst=67)
         actions = [ofpp.OFPActionOutput(ofp.OFPP_CONTROLLER)]
