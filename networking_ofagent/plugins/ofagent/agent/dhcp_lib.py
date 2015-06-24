@@ -53,6 +53,9 @@ class DhcpLib(object):
         self._ip_pool_tbl = {}
         self.br = None
 
+    def set_bridge(self, br):
+        self.br = br
+
     @log_helpers.log_method_call
     def _send_dhcp_reply(self, datapath, port, pkt):
         ofp = datapath.ofproto

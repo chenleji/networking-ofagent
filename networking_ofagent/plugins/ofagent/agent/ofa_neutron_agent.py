@@ -155,6 +155,7 @@ class OFANeutronAgentRyuApp(app_manager.RyuApp):
 
         agent = OFANeutronAgent(ryuapp, **agent_config)
         self.arplib.set_bridge(agent.int_br)
+        self.dhcplib.set_bridge(agent.int_br)
 
         # Start everything.
         LOG.info(_LI("Agent initialized successfully, now running... "))
