@@ -159,6 +159,7 @@ import itertools
 
 from ryu.lib.packet import arp
 from ryu.ofproto import ether
+from ryu.ofproto import inet
 
 from neutron.plugins.common import constants as p_const
 
@@ -181,6 +182,7 @@ class OFAgentIntegrationBridge(ofswitch.OpenFlowSwitch):
         self.install_default_goto_next(tables.LOCAL_IN)
         self.install_default_goto_next(tables.ARP_PASSTHROUGH)
         self.install_arp_responder(tables.ARP_RESPONDER)
+        self.install_dhcp_proxy(tables.ARP_PASSTHROUGH)
 
         self.install_default_goto_next(tables.TUNNEL_OUT)
         self.install_default_goto_next(tables.LOCAL_OUT)
@@ -195,6 +197,23 @@ class OFAgentIntegrationBridge(ofswitch.OpenFlowSwitch):
         (dp, ofp, ofpp) = self._get_dp()
         match = ofpp.OFPMatch(eth_type=ether.ETH_TYPE_ARP,
                               arp_op=arp.ARP_REQUEST)
+        actions = [ofpp.OFPActionOutput(ofp.OFPP_CONTROLLER)]
+        instructions = [
+            ofpp.OFPInstructionActions(ofp.OFPIT_APPLY_ACTIONS, actions)]
+        msg = ofpp.OFPFlowMod(dp,
+                              table_id=table_id,
+                              priority=1,
+                              match=match,
+                              instructions=instructions)
+        self._send_msg(msg)
+        self.install_default_goto_next(table_id)
+
+    def install_dhcp_proxy(self, table_id):
+        (dp, ofp, ofpp) = self._get_dp()
+        match = ofpp.OFPMatch(eth_type=ether.ETH_TYPE_IP,
+                              ip_prot=inet.IPPROTO_UDP,
+                              udp_src=68,
+                              udp_dst=67)
         actions = [ofpp.OFPActionOutput(ofp.OFPP_CONTROLLER)]
         instructions = [
             ofpp.OFPInstructionActions(ofp.OFPIT_APPLY_ACTIONS, actions)]

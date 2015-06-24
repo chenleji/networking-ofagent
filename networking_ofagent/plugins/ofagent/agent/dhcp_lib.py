@@ -133,8 +133,6 @@ class DhcpLib(object):
             LOG.debug("drop non-ethernet packet")
             return
         pkt_vlan = pkt.get_protocol(vlan.vlan)
-        if pkt_vlan is None:
-            return
         pkt_ip = pkt.get_protocol(ipv4.ipv4)
         if pkt_ip is None:
             return
