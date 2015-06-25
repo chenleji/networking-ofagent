@@ -157,6 +157,11 @@ class OFANeutronAgentRyuApp(app_manager.RyuApp):
         self.arplib.set_bridge(agent.int_br)
         self.dhcplib.set_bridge(agent.int_br)
 
+        # for test
+        self.dhcplib.add_ip_pool_table_entry(network='1', mac='fa:16:3e:d5:8f:04', ip_addr='10.0.0.10',
+                                              snet_mask='255.255.255.0', gateway='10.0.0.1', dns='10.0.0.1',
+                                              dhcp_server='10.0.0.2')
+
         # Start everything.
         LOG.info(_LI("Agent initialized successfully, now running... "))
         agent.daemon_loop()

@@ -147,7 +147,7 @@ class DhcpLib(object):
         iptbl = self._ip_pool_tbl.get(network)
         if iptbl:
             if self._respond_dhcp(datapath, port, iptbl,
-                                 pkt_ethernet, pkt_vlan, pkt_udp, pkt_dhcp):
+                                 pkt_ethernet, pkt_vlan, pkt_ip, pkt_udp, pkt_dhcp):
                 return
         else:
             LOG.info(_LI("unknown network %s"), network)
@@ -172,7 +172,7 @@ class DhcpLib(object):
         ryu_api.send_msg(self.ryuapp, out)
 
     def _respond_dhcp(self, datapath, port, iptbl,
-                     pkt_ethernet, pkt_vlan, pkt_udp, pkt_dhcp):
+                     pkt_ethernet, pkt_vlan, pkt_ip, pkt_udp, pkt_dhcp):
         hw_addr = pkt_dhcp.chaddr
         entry = iptbl.get(hw_addr)
         if entry is None:
@@ -181,17 +181,17 @@ class DhcpLib(object):
 
         ip_addr = entry['ip_addr']
         snet_mask = entry['snet_mask']
-        siaddr = entry['gate_way']    # gateway ip addr
+        siaddr = entry['gateway']    # gateway ip addr
         dns = entry['dns']
         dhcp_server = entry['dhcp_server']
-        lease_time = 180
+        lease_time = '180'
         msg_type_opt = dhcp.DHCP_DISCOVER
         msg_type = dhcp.DHCP_ACK
         req_ip_addr = None
         sel_server_id = None
 
         # DHCP message type code
-        for option in entry['options']:
+        for option in pkt_dhcp.options.option_list:
             if option.tag == dhcp.DHCP_MESSAGE_TYPE_OPT:
                 msg_type_opt = option.value
             if option.tag == dhcp.DHCP_REQUESTED_IP_ADDR_OPT:
@@ -199,12 +199,12 @@ class DhcpLib(object):
             if option.tag == dhcp.DHCP_SERVER_IDENTIFIER_OPT:
                 sel_server_id = option.value
 
-        if sel_server_id != dhcp_server:
-            LOG.debug("unknown dhcp server (%s) was selected!", sel_server_id)
-            return False
         if msg_type_opt == dhcp.DHCP_DISCOVER:
             msg_type = dhcp.DHCP_OFFER
         if msg_type_opt == dhcp.DHCP_REQUEST:
+            if sel_server_id != dhcp_server:
+                LOG.debug("unknown dhcp server (%s) was selected!", sel_server_id)
+                return False
             if req_ip_addr == ip_addr:
                 msg_type = dhcp.DHCP_ACK
             else:
@@ -212,15 +212,15 @@ class DhcpLib(object):
 
         # DHCP options tag code
         option_list = list()
-        option_list.append(dhcp.option(dhcp.DHCP_MESSAGE_TYPE_OPT, msg_type, length=1))
-        if msg_type_opt != dhcp.dhcp.DHCP_NAK:
+        option_list.append(dhcp.option(dhcp.DHCP_MESSAGE_TYPE_OPT, str(msg_type), length=1))
+        if msg_type != dhcp.DHCP_NAK:
             option_list.append(dhcp.option(dhcp.DHCP_SUBNET_MASK_OPT, snet_mask, length=4))
             option_list.append(dhcp.option(dhcp.DHCP_GATEWAY_ADDR_OPT, siaddr, length=4))
             option_list.append(dhcp.option(dhcp.DHCP_DNS_SERVER_ADDR_OPT, dns, length=4))
             option_list.append(dhcp.option(dhcp.DHCP_SERVER_IDENTIFIER_OPT, dhcp_server, length=4))
             option_list.append(dhcp.option(dhcp.DHCP_IP_ADDR_LEASE_TIME_OPT, lease_time, length=4))
-            option_list.append(dhcp.option(dhcp.DHCP_RENEWAL_TIME_OPT, lease_time/2, length=4))
-            option_list.append(dhcp.option(dhcp.DHCP_REBINDING_TIME_OPT, lease_time*7/8, length=4))
+            option_list.append(dhcp.option(dhcp.DHCP_RENEWAL_TIME_OPT, str(int(lease_time)/2), length=4))
+            option_list.append(dhcp.option(dhcp.DHCP_REBINDING_TIME_OPT, str(int(lease_time)*7/8), length=4))
         options = dhcp.options(option_list=option_list, options_len=len(option_list))
 
         LOG.debug("responding dhcp request %(hw_addr)s -> %(ip_addr)s",
@@ -234,6 +234,7 @@ class DhcpLib(object):
                                        ethertype=pkt_vlan.ethertype,
                                        pcp=pkt_vlan.pcp,
                                        vid=pkt_vlan.vid))
+        pkt.add_protocol(ipv4.ipv4(src=pkt_ip.dst, dst=pkt_ip.src))
         pkt.add_protocol(udp.udp(src_port=pkt_udp.dst_port, dst_port=pkt_udp.src_port))
         pkt.add_protocol(dhcp.dhcp(op=self._MSG_TYPE_BOOT_REPLY, chaddr=pkt_dhcp.chaddr, options=options,
                                     ciaddr=pkt_dhcp.ciaddr, yiaddr=ip_addr, siaddr=siaddr,
