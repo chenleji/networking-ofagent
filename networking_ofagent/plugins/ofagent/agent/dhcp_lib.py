@@ -193,7 +193,7 @@ class DhcpLib(object):
         # DHCP message type code
         for option in pkt_dhcp.options.option_list:
             if option.tag == dhcp.DHCP_MESSAGE_TYPE_OPT:
-                msg_type_opt = option.value
+                msg_type_opt = ord(option.value)
             if option.tag == dhcp.DHCP_REQUESTED_IP_ADDR_OPT:
                 req_ip_addr = option.value
             if option.tag == dhcp.DHCP_SERVER_IDENTIFIER_OPT:
