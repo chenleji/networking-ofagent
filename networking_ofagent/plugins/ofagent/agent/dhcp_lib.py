@@ -24,6 +24,7 @@ from ryu.lib.packet import vlan
 from ryu.lib.packet import ipv4
 from ryu.lib.packet import udp
 from ryu.lib.packet import dhcp
+from ryu.lib.packet import in_proto
 from ryu.lib import addrconv
 
 from neutron.i18n import _LI
@@ -185,7 +186,7 @@ class DhcpLib(object):
         siaddr = entry['gateway']    # gateway ip addr
         dns = entry['dns']
         dhcp_server = entry['dhcp_server']
-        lease_time = '180'
+        lease_time = 180
         msg_type_opt = dhcp.DHCP_DISCOVER
         msg_type = dhcp.DHCP_ACK
         req_ip_addr = None
@@ -219,26 +220,26 @@ class DhcpLib(object):
             option_list.append(dhcp.option(dhcp.DHCP_GATEWAY_ADDR_OPT, addrconv.ipv4.text_to_bin(siaddr), length=4))
             option_list.append(dhcp.option(dhcp.DHCP_DNS_SERVER_ADDR_OPT, addrconv.ipv4.text_to_bin(dns), length=4))
             option_list.append(dhcp.option(dhcp.DHCP_SERVER_IDENTIFIER_OPT, addrconv.ipv4.text_to_bin(dhcp_server), length=4))
-            option_list.append(dhcp.option(dhcp.DHCP_IP_ADDR_LEASE_TIME_OPT, chr(int(lease_time)), length=4))
-            option_list.append(dhcp.option(dhcp.DHCP_RENEWAL_TIME_OPT, chr(int(lease_time)/2), length=4))
-            option_list.append(dhcp.option(dhcp.DHCP_REBINDING_TIME_OPT, chr(int(lease_time)*7/8), length=4))
-        options = dhcp.options(option_list=option_list, options_len=len(option_list))
+            option_list.append(dhcp.option(dhcp.DHCP_IP_ADDR_LEASE_TIME_OPT, chr(lease_time), length=4))
+            option_list.append(dhcp.option(dhcp.DHCP_RENEWAL_TIME_OPT, chr(lease_time/2), length=4))
+            option_list.append(dhcp.option(dhcp.DHCP_REBINDING_TIME_OPT, chr(lease_time*7/8), length=4))
+        options = dhcp.options(option_list=option_list)
 
         LOG.debug("responding dhcp request %(hw_addr)s -> %(ip_addr)s",
                   {'hw_addr': hw_addr, 'ip_addr': ip_addr})
         pkt = packet.Packet()
         pkt.add_protocol(ethernet.ethernet(ethertype=pkt_ethernet.ethertype,
                                            dst=pkt_ethernet.src,
-                                           src=hw_addr))
+                                           src='00:00:00:00:00:00'))
         if pkt_vlan:
             pkt.add_protocol(vlan.vlan(cfi=pkt_vlan.cfi,
                                        ethertype=pkt_vlan.ethertype,
                                        pcp=pkt_vlan.pcp,
                                        vid=pkt_vlan.vid))
-        pkt.add_protocol(ipv4.ipv4(src=pkt_ip.dst, dst=pkt_ip.src))
+        pkt.add_protocol(ipv4.ipv4(src=pkt_ip.dst, dst=pkt_ip.src, proto=in_proto.IPPROTO_UDP))
         pkt.add_protocol(udp.udp(src_port=pkt_udp.dst_port, dst_port=pkt_udp.src_port))
         pkt.add_protocol(dhcp.dhcp(op=self._MSG_TYPE_BOOT_REPLY, chaddr=pkt_dhcp.chaddr, options=options,
-                                    ciaddr=pkt_dhcp.ciaddr, yiaddr=ip_addr, siaddr=siaddr,
+                                    xid=pkt_dhcp.xid, ciaddr=pkt_dhcp.ciaddr, yiaddr=ip_addr, siaddr=siaddr,
                                     giaddr='0.0.0.0', sname='', boot_file=''))
         self._send_dhcp_reply(datapath, port, pkt)
         return True
