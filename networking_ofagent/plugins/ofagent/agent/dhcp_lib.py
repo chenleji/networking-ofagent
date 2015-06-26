@@ -24,6 +24,7 @@ from ryu.lib.packet import vlan
 from ryu.lib.packet import ipv4
 from ryu.lib.packet import udp
 from ryu.lib.packet import dhcp
+from ryu.lib import addrconv
 
 from neutron.i18n import _LI
 
@@ -212,15 +213,15 @@ class DhcpLib(object):
 
         # DHCP options tag code
         option_list = list()
-        option_list.append(dhcp.option(dhcp.DHCP_MESSAGE_TYPE_OPT, str(msg_type), length=1))
+        option_list.append(dhcp.option(dhcp.DHCP_MESSAGE_TYPE_OPT, chr(msg_type), length=1))
         if msg_type != dhcp.DHCP_NAK:
-            option_list.append(dhcp.option(dhcp.DHCP_SUBNET_MASK_OPT, snet_mask, length=4))
-            option_list.append(dhcp.option(dhcp.DHCP_GATEWAY_ADDR_OPT, siaddr, length=4))
-            option_list.append(dhcp.option(dhcp.DHCP_DNS_SERVER_ADDR_OPT, dns, length=4))
-            option_list.append(dhcp.option(dhcp.DHCP_SERVER_IDENTIFIER_OPT, dhcp_server, length=4))
-            option_list.append(dhcp.option(dhcp.DHCP_IP_ADDR_LEASE_TIME_OPT, lease_time, length=4))
-            option_list.append(dhcp.option(dhcp.DHCP_RENEWAL_TIME_OPT, str(int(lease_time)/2), length=4))
-            option_list.append(dhcp.option(dhcp.DHCP_REBINDING_TIME_OPT, str(int(lease_time)*7/8), length=4))
+            option_list.append(dhcp.option(dhcp.DHCP_SUBNET_MASK_OPT, addrconv.ipv4.text_to_bin(snet_mask), length=4))
+            option_list.append(dhcp.option(dhcp.DHCP_GATEWAY_ADDR_OPT, addrconv.ipv4.text_to_bin(siaddr), length=4))
+            option_list.append(dhcp.option(dhcp.DHCP_DNS_SERVER_ADDR_OPT, addrconv.ipv4.text_to_bin(dns), length=4))
+            option_list.append(dhcp.option(dhcp.DHCP_SERVER_IDENTIFIER_OPT, addrconv.ipv4.text_to_bin(dhcp_server), length=4))
+            option_list.append(dhcp.option(dhcp.DHCP_IP_ADDR_LEASE_TIME_OPT, chr(int(lease_time)), length=4))
+            option_list.append(dhcp.option(dhcp.DHCP_RENEWAL_TIME_OPT, chr(int(lease_time)/2), length=4))
+            option_list.append(dhcp.option(dhcp.DHCP_REBINDING_TIME_OPT, chr(int(lease_time)*7/8), length=4))
         options = dhcp.options(option_list=option_list, options_len=len(option_list))
 
         LOG.debug("responding dhcp request %(hw_addr)s -> %(ip_addr)s",
